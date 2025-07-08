@@ -4,8 +4,9 @@
 
 function result = stk_IWFG (y, y_ref, k)
 
-% disp(y);
-% disp(k);
+disp(y);
+disp(y_ref);
+disp(k);
 
 % Missing or empty y_ref: will use [0 0 ... 0] as a reference point
 if nargin < 2

@@ -44,6 +44,17 @@
 
 typedef double OBJECTIVE;
 
+typedef struct {
+    /* formerly-global variables */
+    FRONT *fs;      /* stack of auxiliary fronts    */
+    int    fr;      /* current stack depth          */
+    int    safe;    /* #points already in order     */
+
+    /* cache the sizes we allocated for `fs` so we can free safely */
+    int    maxm;
+    int    maxn;
+} WFG_CTX;
+
 typedef struct
 {
     int n;
@@ -61,31 +72,18 @@ typedef struct
 }
 FRONT;
 
-typedef struct {
-    /* formerly-global variables */
-    FRONT *fs;      /* stack of auxiliary fronts    */
-    int    fr;      /* current stack depth          */
-    int    safe;    /* #points already in order     */
-
-    /* cache the sizes we allocated for `fs` so we can free safely */
-    int    maxm;
-    int    maxn;
-} WFG_CTX;
-
 int dominates1way(POINT p, POINT q, int k);
 
-double wfg_compute_hv (void *ctx, FRONT* ps);
+double wfg_compute_hv (FRONT* ps);
 
-// void wfg_alloc (int maxm, int maxn);
-// void wfg_free (int maxm, int maxn);
-void wfg_ctx_init (WFG_CTX *ctx, int maxm, int maxn);
-void wfg_ctx_destroy (WFG_CTX *ctx);
+void wfg_alloc (int maxm, int maxn);
+void wfg_free (int maxm, int maxn);
 
 void wfg_front_init (FRONT* front, int nb_points, int nb_objectives);
 void wfg_front_destroy (FRONT* front);
 void wfg_front_resize (FRONT* f, int nb_points, int nb_objectives);
 
-double exclhv (void *ctx, FRONT* ps, int p);
+double exclhv (FRONT* ps, int p);
 double inclhv (POINT p);
 
 /*****************************************/
@@ -108,7 +106,7 @@ RLIST;
 /* wfg_compute_decomposition: similar to wfg_compute_hv, but */
 /*   returns a decomposition of the dominated region into    */
 /*   hyper-rectangles (instead of its hyper-volume)          */
-void wfg_compute_decomposition (void *ctx, FRONT* ps, RLIST* Rlist);
+void wfg_compute_decomposition (FRONT* ps, RLIST* Rlist);
 
 /* Memory management */
 RLIST* Rlist_alloc (int alloc_size, int n);

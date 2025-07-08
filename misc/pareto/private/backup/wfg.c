@@ -45,11 +45,13 @@
 #include "wfg.h"
 #include "mex.h"
 
-#define CTX    ((WFG_CTX *)ctx)
-
-double hv (void* ctx, FRONT*);
+double hv (FRONT*);
 /* and the RLIST-variant of hv: */
-void Rlist_hv (void* ctx, FRONT* ps, RLIST* Rlist, int sign);
+void Rlist_hv (FRONT* ps, RLIST* Rlist, int sign);
+
+FRONT *fs = NULL;  /* memory management stuff                      */
+int fr = 0;        /* current depth                                */
+int safe = 0;      /* the number of points that don't need sorting */
 
 
 int greater (const void *v1, const void *v2)
@@ -120,8 +122,8 @@ int dominates1way(POINT p, POINT q, int k)
 }
 
 
-void makeDominatedBit (void *ctx, FRONT* ps, int p)
-/* creates the front ps[0 .. p-1] in CTX->fs[CTX->fr], with each point bounded by ps[p] and dominated points removed */
+void makeDominatedBit (FRONT* ps, int p)
+/* creates the front ps[0 .. p-1] in fs[fr], with each point bounded by ps[p] and dominated points removed */
 {
     int i, j, k;
     int l = 0;
@@ -131,15 +133,15 @@ void makeDominatedBit (void *ctx, FRONT* ps, int p)
 
     for (i = p - 1; i >= 0; i--)
         if (BEATS(ps->points[p].objectives[n - 1],ps->points[i].objectives[n - 1]))
-        {   CTX->fs[CTX->fr].points[u].objectives[n - 1] = ps->points[i].objectives[n - 1];
+        {   fs[fr].points[u].objectives[n - 1] = ps->points[i].objectives[n - 1];
             for (j = 0; j < n - 1; j++)
-                CTX->fs[CTX->fr].points[u].objectives[j] = WORSE(ps->points[p].objectives[j],ps->points[i].objectives[j]);
+                fs[fr].points[u].objectives[j] = WORSE(ps->points[p].objectives[j],ps->points[i].objectives[j]);
             u--;
         }
         else
-        {   CTX->fs[CTX->fr].points[l].objectives[n - 1] = ps->points[p].objectives[n - 1];
+        {   fs[fr].points[l].objectives[n - 1] = ps->points[p].objectives[n - 1];
             for (j = 0; j < n - 1; j++)
-                CTX->fs[CTX->fr].points[l].objectives[j] = WORSE(ps->points[p].objectives[j],ps->points[i].objectives[j]);
+                fs[fr].points[l].objectives[j] = WORSE(ps->points[p].objectives[j],ps->points[i].objectives[j]);
             l++;
         }
 
@@ -147,90 +149,90 @@ void makeDominatedBit (void *ctx, FRONT* ps, int p)
        points below l can dominate each other, and we don't need to compare the last objective
        points above l cannot dominate points that start below l, and we don't need to compare the last objective */
 
-    CTX->fs[CTX->fr].nPoints = 1;
+    fs[fr].nPoints = 1;
     for (i = 1; i < l; i++)
     {
         j = 0;
-        while (j < CTX->fs[CTX->fr].nPoints)
-            switch (dominates2way(CTX->fs[CTX->fr].points[i], CTX->fs[CTX->fr].points[j], n-2))
+        while (j < fs[fr].nPoints)
+            switch (dominates2way(fs[fr].points[i], fs[fr].points[j], n-2))
             {
             case  0:
                 j++;
                 break;
             case -1: /* AT THIS POINT WE KNOW THAT i CANNOT BE DOMINATED BY ANY OTHER PROMOTED POINT j
                         SWAP i INTO j, AND 1-WAY DOM FOR THE REST OF THE js */
-                t = CTX->fs[CTX->fr].points[j];
-                CTX->fs[CTX->fr].points[j] = CTX->fs[CTX->fr].points[i];
-                CTX->fs[CTX->fr].points[i] = t;
-                while(j < CTX->fs[CTX->fr].nPoints - 1 && dominates1way(CTX->fs[CTX->fr].points[j], CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints - 1], n-1))
-                    CTX->fs[CTX->fr].nPoints--;
+                t = fs[fr].points[j];
+                fs[fr].points[j] = fs[fr].points[i];
+                fs[fr].points[i] = t;
+                while(j < fs[fr].nPoints - 1 && dominates1way(fs[fr].points[j], fs[fr].points[fs[fr].nPoints - 1], n-1))
+                    fs[fr].nPoints--;
                 k = j+1;
-                while (k < CTX->fs[CTX->fr].nPoints)
-                    if(dominates1way(CTX->fs[CTX->fr].points[j], CTX->fs[CTX->fr].points[k], n-2))
-                    {   t = CTX->fs[CTX->fr].points[k];
-                        CTX->fs[CTX->fr].nPoints--;
-                        CTX->fs[CTX->fr].points[k] = CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints];
-                        CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints] = t;
+                while (k < fs[fr].nPoints)
+                    if(dominates1way(fs[fr].points[j], fs[fr].points[k], n-2))
+                    {   t = fs[fr].points[k];
+                        fs[fr].nPoints--;
+                        fs[fr].points[k] = fs[fr].points[fs[fr].nPoints];
+                        fs[fr].points[fs[fr].nPoints] = t;
                     }
                     else
                         k++;
             default:
-                j = CTX->fs[CTX->fr].nPoints + 1;
+                j = fs[fr].nPoints + 1;
             }
-        if (j == CTX->fs[CTX->fr].nPoints)
-        {   t = CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints];
-            CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints] = CTX->fs[CTX->fr].points[i];
-            CTX->fs[CTX->fr].points[i] = t;
-            CTX->fs[CTX->fr].nPoints++;
+        if (j == fs[fr].nPoints)
+        {   t = fs[fr].points[fs[fr].nPoints];
+            fs[fr].points[fs[fr].nPoints] = fs[fr].points[i];
+            fs[fr].points[i] = t;
+            fs[fr].nPoints++;
         }
     }
-    CTX->safe = WORSE(l,CTX->fs[CTX->fr].nPoints);
+    safe = WORSE(l,fs[fr].nPoints);
     for (i = l; i < p; i++)
     {
         j = 0;
-        while (j < CTX->safe)
-            if(dominates1way(CTX->fs[CTX->fr].points[j], CTX->fs[CTX->fr].points[i], n-2))
-                j = CTX->fs[CTX->fr].nPoints + 1;
+        while (j < safe)
+            if(dominates1way(fs[fr].points[j], fs[fr].points[i], n-2))
+                j = fs[fr].nPoints + 1;
             else
                 j++;
-        while (j < CTX->fs[CTX->fr].nPoints)
-            switch (dominates2way(CTX->fs[CTX->fr].points[i], CTX->fs[CTX->fr].points[j], n-1))
+        while (j < fs[fr].nPoints)
+            switch (dominates2way(fs[fr].points[i], fs[fr].points[j], n-1))
             {
             case  0:
                 j++;
                 break;
             case -1: /* AT THIS POINT WE KNOW THAT i CANNOT BE DOMINATED BY ANY OTHER PROMOTED POINT j
 		        SWAP i INTO j, AND 1-WAY DOM FOR THE REST OF THE js */
-                t = CTX->fs[CTX->fr].points[j];
-                CTX->fs[CTX->fr].points[j] = CTX->fs[CTX->fr].points[i];
-                CTX->fs[CTX->fr].points[i] = t;
-                while(j < CTX->fs[CTX->fr].nPoints - 1 && dominates1way(CTX->fs[CTX->fr].points[j], CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints - 1], n-1))
-                    CTX->fs[CTX->fr].nPoints--;
+                t = fs[fr].points[j];
+                fs[fr].points[j] = fs[fr].points[i];
+                fs[fr].points[i] = t;
+                while(j < fs[fr].nPoints - 1 && dominates1way(fs[fr].points[j], fs[fr].points[fs[fr].nPoints - 1], n-1))
+                    fs[fr].nPoints--;
                 k = j+1;
-                while (k < CTX->fs[CTX->fr].nPoints)
-                    if(dominates1way(CTX->fs[CTX->fr].points[j], CTX->fs[CTX->fr].points[k], n-1))
-                    {   t = CTX->fs[CTX->fr].points[k];
-                        CTX->fs[CTX->fr].nPoints--;
-                        CTX->fs[CTX->fr].points[k] = CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints];
-                        CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints] = t;
+                while (k < fs[fr].nPoints)
+                    if(dominates1way(fs[fr].points[j], fs[fr].points[k], n-1))
+                    {   t = fs[fr].points[k];
+                        fs[fr].nPoints--;
+                        fs[fr].points[k] = fs[fr].points[fs[fr].nPoints];
+                        fs[fr].points[fs[fr].nPoints] = t;
                     }
                     else
                         k++;
             default:
-                j = CTX->fs[CTX->fr].nPoints + 1;
+                j = fs[fr].nPoints + 1;
             }
-        if (j == CTX->fs[CTX->fr].nPoints)
-        {   t = CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints];
-            CTX->fs[CTX->fr].points[CTX->fs[CTX->fr].nPoints] = CTX->fs[CTX->fr].points[i];
-            CTX->fs[CTX->fr].points[i] = t;
-            CTX->fs[CTX->fr].nPoints++;
+        if (j == fs[fr].nPoints)
+        {   t = fs[fr].points[fs[fr].nPoints];
+            fs[fr].points[fs[fr].nPoints] = fs[fr].points[i];
+            fs[fr].points[i] = t;
+            fs[fr].nPoints++;
         }
     }
 
     /* Set the number of objectives for all points */
-    wfg_front_resize (&CTX->fs[CTX->fr], CTX->fs[CTX->fr].nPoints, n);
+    wfg_front_resize (&fs[fr], fs[fr].nPoints, n);
 
-    CTX->fr++;
+    fr++;
 }
 
 
@@ -741,30 +743,30 @@ void Rlist_inclhv4 (POINT p, POINT q, POINT r, POINT s, RLIST* Rlist, int sign)
 }
 
 
-double exclhv (void *ctx, FRONT* ps, int p)
+double exclhv (FRONT* ps, int p)
 /* returns the exclusive hypervolume of ps[p] relative to ps[0 .. p-1] */
 {
     double volume;
 
-    makeDominatedBit (ctx, ps, p);
-    volume = inclhv (ps->points[p]) - hv (ctx, &CTX->fs[CTX->fr - 1]);
-    CTX->fr--;
+    makeDominatedBit (ps, p);
+    volume = inclhv (ps->points[p]) - hv (&fs[fr - 1]);
+    fr--;
 
     return volume;
 }
 
 /* RLIST-variant of exclhv */
-void Rlist_exclhv (void *ctx, FRONT* ps, int p, RLIST* Rlist, int sign)
+void Rlist_exclhv (FRONT* ps, int p, RLIST* Rlist, int sign)
 {
-    makeDominatedBit (ctx, ps, p);
+    makeDominatedBit (ps, p);
     Rlist_inclhv (ps->points[p], Rlist, sign);
-    Rlist_hv (ctx, &CTX->fs[CTX->fr - 1], Rlist, -sign);
+    Rlist_hv (&fs[fr - 1], Rlist, -sign);
 
-    CTX->fr --;
+    fr --;
 }
 
 
-double hv (void *ctx, FRONT* ps)
+double hv (FRONT* ps)
 /* returns the hypervolume of ps[0 ..] */
 {
     int i; // index variable
@@ -785,18 +787,18 @@ double hv (void *ctx, FRONT* ps)
     }
 
     /* these points need sorting */
-    qsort(&ps->points[CTX->safe], ps->nPoints - CTX->safe, sizeof(POINT), greater);
+    qsort(&ps->points[safe], ps->nPoints - safe, sizeof(POINT), greater);
 
-    /* n = 2 implies that CTX->safe = 0 */
+    /* n = 2 implies that safe = 0 */
     if (n == 2) return hv_2dim (ps, ps->nPoints);
 
     /* these points don't NEED sorting, but it helps */
-    qsort(ps->points, CTX->safe, sizeof(POINT), greaterabbrev);
+    qsort(ps->points, safe, sizeof(POINT), greaterabbrev);
 
-    if (n == 3 && CTX->safe > 0)
+    if (n == 3 && safe > 0)
     {
-        volume = ps->points[0].objectives[2] * (hv_2dim (ps, CTX->safe));
-        i = CTX->safe;
+        volume = ps->points[0].objectives[2] * (hv_2dim (ps, safe));
+        i = safe;
     }
     else
     {
@@ -810,7 +812,7 @@ double hv (void *ctx, FRONT* ps)
     for (; i < ps->nPoints; i++)
         /* we can ditch dominated points here,
            but they will be ditched anyway in makeDominatedBit */
-        volume += ps->points[i].objectives[n - 1] * (exclhv (ctx, ps, i));
+        volume += ps->points[i].objectives[n - 1] * (exclhv (ps, i));
 
     wfg_front_resize (ps, ps->nPoints, n);
 
@@ -818,7 +820,7 @@ double hv (void *ctx, FRONT* ps)
 }
 
 /* RLIST-variant of hv */
-void Rlist_hv (void* ctx, FRONT* ps, RLIST* Rlist, int sign)
+void Rlist_hv (FRONT* ps, RLIST* Rlist, int sign)
 {
     int i, j, Ridx;
     int n = ps->n;
@@ -843,9 +845,9 @@ void Rlist_hv (void* ctx, FRONT* ps, RLIST* Rlist, int sign)
       }
 
     /* these points need sorting */
-    qsort (&ps->points[CTX->safe], ps->nPoints - CTX->safe, sizeof(POINT), greater);
+    qsort (&ps->points[safe], ps->nPoints - safe, sizeof(POINT), greater);
 
-    /* n = 2 implies that CTX->safe = 0 */
+    /* n = 2 implies that safe = 0 */
     if (n == 2)
       {
         Rlist_hv_2dim (ps, ps->nPoints, Rlist, sign);
@@ -853,20 +855,20 @@ void Rlist_hv (void* ctx, FRONT* ps, RLIST* Rlist, int sign)
       }
 
     /* these points don't NEED sorting, but it helps */
-    qsort (ps->points, CTX->safe, sizeof(POINT), greaterabbrev);
+    qsort (ps->points, safe, sizeof(POINT), greaterabbrev);
 
-    if ((n == 3) && (CTX->safe > 0))
+    if ((n == 3) && (safe > 0))
       {
         /* Take note of the number of rectangles before calling Rlist_hv_2dim */
         Ridx = Rlist->size;
 
-        Rlist_hv_2dim (ps, CTX->safe, Rlist, sign);
+        Rlist_hv_2dim (ps, safe, Rlist, sign);
 
         /* Add last coordinate to all new rectangles */
         for (j = Ridx; j < Rlist->size; j++)
           Rlist->xmax[j][2] = ps->points[0].objectives[2];
 
-        i = CTX->safe;
+        i = safe;
       }
     else
       {
@@ -882,7 +884,7 @@ void Rlist_hv (void* ctx, FRONT* ps, RLIST* Rlist, int sign)
       /* Take note of the number of rectangles before calling Rlist_exclhv */
       Ridx = Rlist->size;
 
-      Rlist_exclhv (CTX, ps, i, Rlist, sign);
+      Rlist_exclhv (ps, i, Rlist, sign);
 
       /* Add last coordinate to all new rectangles */
       for (j = Ridx; j < Rlist->size; j++)
@@ -897,43 +899,55 @@ void Rlist_hv (void* ctx, FRONT* ps, RLIST* Rlist, int sign)
 /***** MAIN FUNCTIONS *****/
 /**************************/
 
-double wfg_compute_hv (void *ctx, FRONT* ps)
+double wfg_compute_hv (FRONT* ps)
 {
-    double hv_val = hv(ctx, ps);             /* note the ctx pointer */
-    return hv_val;
+  /* Set global variables */
+  safe = 0;
+  fr = 0;
+
+  return hv (ps);
 }
 
-void wfg_compute_decomposition (void *ctx, FRONT* ps, RLIST* Rlist)
+void wfg_compute_decomposition (FRONT* ps, RLIST* Rlist)
 {
-    Rlist_hv(ctx, ps, Rlist, /*sign=*/1);
+  /* Set global variables */
+  safe = 0;
+  fr = 0;
+
+  Rlist_hv (ps, Rlist, 1);
 }
+
 
 /********************************************/
 /***** ALLOC/FREE GLOBAL LIST OF FRONTS *****/
 /********************************************/
 
-void wfg_ctx_init (WFG_CTX *ctx, int maxm, int maxn)
+void wfg_alloc (int maxm, int maxn)
+/* Allocate memory for several auxiliary fronts */
 {
-    memset(ctx, 0, sizeof *ctx);
-    ctx->maxm = maxm;
-    ctx->maxn = maxn;
+  int i, max_depth;
 
-    if (maxn > 2) {
-        int depth = maxn - 2;
-        ctx->fs = mxMalloc(depth * sizeof *ctx->fs);
-        for (int i = 0; i < depth; ++i)
-            wfg_front_init(&ctx->fs[i], maxm, maxn - i - 1);
+  if (maxn > 2)
+    {
+      max_depth = maxn - 2;
+      fs = (FRONT*) mxMalloc (sizeof (FRONT) * max_depth);
+      for (i = 0; i < max_depth; i++)
+        wfg_front_init (&fs[i], maxm, maxn - i - 1);
     }
 }
 
 
-void wfg_ctx_destroy (WFG_CTX *ctx)
+void wfg_free (int maxm, int maxn)
 {
-    if (ctx->fs) {
-        int depth = ctx->maxn - 2;
-        for (int i = 0; i < depth; ++i)
-            wfg_front_destroy(&ctx->fs[i]);
-        mxFree(ctx->fs);
+  int i, max_depth;
+
+  if (maxn > 2)
+    {
+      max_depth = maxn - 2;
+      for (i = 0; i < max_depth; i++)
+        wfg_front_destroy (&fs[i]);
+      mxFree (fs);
+      fs = NULL; 
     }
 }
 

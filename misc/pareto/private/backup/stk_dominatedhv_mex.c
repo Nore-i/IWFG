@@ -36,19 +36,19 @@
 
 /* We assume in this file that OBJECTIVE is the same as double */
 
-double compute_hv (WFG_CTX* ctx, mxArray* f, FRONT *buffer)
+double compute_hv (mxArray* f, FRONT *buffer)
 {
   size_t i, j;           /* loop indices */
-  int nb_points;      /* number of points */
-  int nb_objectives;  /* number of objectives */
+  size_t nb_points;      /* number of points */
+  size_t nb_objectives;  /* number of objectives */
   double *data;          /* pointer to input data */
   double hv, t;          /* hypervolume */
 
-  nb_points = (int) mxGetM (f);
+  nb_points = mxGetM (f);
   if (nb_points == 0)
       return 0.0;
 
-  nb_objectives = (int) mxGetN (f);
+  nb_objectives = mxGetN (f);
   data = mxGetPr (f);
 
   if (nb_objectives == 0)
@@ -74,12 +74,12 @@ double compute_hv (WFG_CTX* ctx, mxArray* f, FRONT *buffer)
         for (j = 0; j < nb_objectives; j++)
           buffer->points[i].objectives[j] = data[j * nb_points + i];
 
-      return wfg_compute_hv (ctx, buffer);
+      return wfg_compute_hv (buffer);
     }
 }
 
 
-void compute_decomposition (WFG_CTX* ctx, mxArray* f, FRONT *buffer,
+void compute_decomposition (mxArray* f, FRONT *buffer,
                             mxArray** sign, mxArray** xmin, mxArray** xmax)
 {
   size_t i, j;           /* loop indices */
@@ -91,8 +91,8 @@ void compute_decomposition (WFG_CTX* ctx, mxArray* f, FRONT *buffer,
   RLIST* Rlist;          /* list of hyper-rectangles */
   double *sign_data, *xmin_data, *xmax_data;
 
-  nb_points = (int) mxGetM (f);
-  nb_objectives = (int) mxGetN (f);
+  nb_points = mxGetM (f);
+  nb_objectives = mxGetN (f);
   data = mxGetPr (f);
 
   if (nb_objectives == 0)
@@ -141,7 +141,7 @@ void compute_decomposition (WFG_CTX* ctx, mxArray* f, FRONT *buffer,
 
       Rlist = Rlist_alloc (rect_alloc, nb_objectives);
 
-      wfg_compute_decomposition (ctx, buffer, Rlist);
+      wfg_compute_decomposition (buffer, Rlist);
 
       *sign = mxCreateDoubleMatrix (Rlist->size, 1, mxREAL);
       *xmin = mxCreateDoubleMatrix (Rlist->size, nb_objectives, mxREAL);
@@ -187,7 +187,6 @@ void mexFunction (int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
   size_t maxn = 0;        /* maximum number of objectives        */
   double *hv;             /* computed hyper-volumes */
   bool must_free_fronts;  /* flag: do we need to free 'fronts' ? */
-  WFG_CTX *ctx;           /* WFG context */
   mxArray* sign;          /* temp array of signs (do_decomposition = true) */
   mxArray* xmin;          /* temp array of lower bounds (do_decomposition = true) */
   mxArray* xmax;          /* temp array of upper bounds (do_decomposition = true) */
@@ -244,8 +243,7 @@ void mexFunction (int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
   wfg_front_init (&buffer, maxm, maxn);
 
   /* Allocate memory for WFG */
-  // wfg_alloc (maxm, maxn);
-  wfg_ctx_init (ctx, maxm, maxn);
+  wfg_alloc (maxm, maxn);
 
 
   /*--- Compute hyper-volumes or decomposition -------------------------------*/
@@ -264,7 +262,7 @@ void mexFunction (int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
       for (i = 0; i < nb_fronts; i++)
         {
-          compute_decomposition (ctx, fronts[i], &buffer, &sign, &xmin, &xmax);
+          compute_decomposition (fronts[i], &buffer, &sign, &xmin, &xmax);
           mxSetFieldByNumber (HV_OUT, i, 0, sign);
           mxSetFieldByNumber (HV_OUT, i, 1, xmin);
           mxSetFieldByNumber (HV_OUT, i, 2, xmax);
@@ -285,14 +283,13 @@ void mexFunction (int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
       hv = mxGetPr (HV_OUT);
 
       for (i = 0; i < nb_fronts; i++)
-        hv[i] = compute_hv (ctx, fronts[i], &buffer);
+        hv[i] = compute_hv (fronts[i], &buffer);
     }
 
 
   /*--- Free memory ----------------------------------------------------------*/
 
-  // wfg_free (maxm, maxn);
-  wfg_ctx_destroy (ctx);
+  wfg_free (maxm, maxn);
 
   wfg_front_destroy (&buffer);
 

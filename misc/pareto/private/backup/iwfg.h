@@ -36,84 +36,51 @@
  *                                                                           *
  ****************************************************************************/
 
-#ifndef ___WFG_H___
-#define ___WFG_H___
+#ifndef ___IWFG_H___
+#define ___IWFG_H___
 
-#define BEATS(x,y)   (x > y)
-#define WORSE(x,y)   (BEATS(y,x) ? (x) : (y))
-
-typedef double OBJECTIVE;
-
-typedef struct
-{
-    int n;
-    OBJECTIVE *objectives;
-}
-POINT;
+#include "wfg.h"
 
 typedef struct
 {
     int nPoints;
-    int nPoints_alloc;  /* must *not* be changed */
     int n;
-    int n_alloc;        /* must *not* be changed */
+    double base_volume;
     POINT *points;
 }
-FRONT;
+SLICE;
 
-typedef struct {
-    /* formerly-global variables */
-    FRONT *fs;      /* stack of auxiliary fronts    */
-    int    fr;      /* current stack depth          */
-    int    safe;    /* #points already in order     */
-
-    /* cache the sizes we allocated for `fs` so we can free safely */
-    int    maxm;
-    int    maxn;
-} WFG_CTX;
-
-int dominates1way(POINT p, POINT q, int k);
-
-double wfg_compute_hv (void *ctx, FRONT* ps);
-
-// void wfg_alloc (int maxm, int maxn);
-// void wfg_free (int maxm, int maxn);
-void wfg_ctx_init (WFG_CTX *ctx, int maxm, int maxn);
-void wfg_ctx_destroy (WFG_CTX *ctx);
-
-void wfg_front_init (FRONT* front, int nb_points, int nb_objectives);
-void wfg_front_destroy (FRONT* front);
-void wfg_front_resize (FRONT* f, int nb_points, int nb_objectives);
-
-double exclhv (void *ctx, FRONT* ps, int p);
-double inclhv (POINT p);
-
-/*****************************************/
-/* RLIST structure & associated funtions */
-/*****************************************/
-
-typedef struct
+typedef struct 
 {
-    int allocated_size;  /* maximal number of rectangles     */
-    int size;            /* current number of rectangles     */
-    int n;               /* dimension (number of objectives) */
-    double **xmin;       /* lower bounds                     */
-    double *xmin_data;   /* lower bounds (one block)         */
-    double **xmax;       /* upper bounds                     */
-    double *xmax_data;   /* upper bounds (one block)         */  
-    int *sign;           /* inclusion/exclusion              */
+    int idx;   /* The index of the point in the original front */
+    POINT *point;   /* The excluded point in question */
+    SLICE *slices; /* Currently associated slices */
+    int nslices;
+    int nslices_alloc;
+    int done_slices; /* The number of slices already processed */
+    double exclusive_hv; /* The exclusive hypervolume contribution of this point */
 }
-RLIST;
+EXPOINT;
 
-/* wfg_compute_decomposition: similar to wfg_compute_hv, but */
-/*   returns a decomposition of the dominated region into    */
-/*   hyper-rectangles (instead of its hyper-volume)          */
-void wfg_compute_decomposition (void *ctx, FRONT* ps, RLIST* Rlist);
+int exgreater (const void *v1, const void *v2);
 
-/* Memory management */
-RLIST* Rlist_alloc (int alloc_size, int n);
-void Rlist_extend (RLIST* Rlist, int k, int* p_Ridx);
-void Rlist_free (RLIST* Rlist);
+int slgreater (const void *v1, const void *v2);
 
+static void insert_on_k_desc(POINT *ql, int *sz,
+                             const POINT *p, int k);
+                          
+static int cmp_on_k_desc(const void *a, const void *b, void *kp);
+
+int iwfg_bottom_k(const FRONT *in_front, int k, int *idx_out);
+
+static void add_slice(SLICE *slice,
+                      POINT   *ql,  int ql_size,
+                      double   base, int n);
+
+static void ensure_slice_capacity(EXPOINT *ep, int capacity);
+
+static void slice_free (SLICE *sl);
+
+static void compute_slice(FRONT *buffer, EXPOINT *ep);
 
 #endif
